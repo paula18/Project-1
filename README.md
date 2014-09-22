@@ -1,6 +1,19 @@
 Project 1
 =========
 
+#Performance Analysis
+
+The results of my analysis are shown in the table. 
+I did not see any noticeable change in the performance when changing the block size. 
+Also, unless the number of objects is really high, there is no extremely big change 
+in the performance either. The change in performance is noticeable when the GPU is 
+doing intensive operations. For this same reason, I would not expect a big change in 
+performance when running the matrix program with a serial or a GPU version. 
+
+
+
+
+
 # Project 1 : Introduction to CUDA
 
 ## NOTE :

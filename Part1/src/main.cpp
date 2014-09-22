@@ -51,6 +51,12 @@ int main(int argc, char** argv)
 
 void runCuda()
 {
+
+	cudaEvent_t start,stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	float time; 
+	cudaEventRecord(start, 0);
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
 
@@ -61,6 +67,19 @@ void runCuda()
 
     // execute the kernel
     cudaNBodyUpdateWrapper(DT);
+
+	cudaEventRecord(stop, 0); 
+	cudaEventSynchronize(stop); 
+
+	cudaEventElapsedTime(&time, start, stop); 
+
+	iterations++;
+	totalTime += time;
+
+	if (iterations == 100)
+	{
+		std::cout << "Iterations: " << iterations << " Time: " << time << " Average Time: " << totalTime / iterations << std::endl;
+	}
 #if VISUALIZE == 1
     cudaUpdatePBO(dptr, field_width, field_height);
     cudaUpdateVBO(dptrvert, field_width, field_height);

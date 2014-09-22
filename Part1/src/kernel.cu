@@ -27,10 +27,10 @@ void checkCUDAError(const char *msg, int line = -1)
         {
             fprintf(stderr, "Line %d: ", line);
         }
-        fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) ); 
-        exit(EXIT_FAILURE); 
+        fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) );
+        exit(EXIT_FAILURE);
     }
-} 
+}
 
 __host__ __device__ unsigned int hash(unsigned int a){
     a = (a+0x7ed55d16) + (a<<12);
@@ -66,7 +66,7 @@ __global__ void generateRandomPosArray(int time, int N, glm::vec4 * arr, float s
     }
 }
 
-//Determine velocity from the distance from the center star. Not super physically accurate because 
+//Determine velocity from the distance from the center star. Not super physically accurate because
 //the mass ratio is too close, but it makes for an interesting looking scene
 __global__ void generateCircularVelArray(int time, int N, glm::vec3 * arr, glm::vec4 * pos)
 {
@@ -84,24 +84,73 @@ __global__ void generateCircularVelArray(int time, int N, glm::vec3 * arr, glm::
 }
 
 // TODO: Core force calc kernel global memory
-//		 HINT : You may want to write a helper function that will help you 
+//         HINT : You may want to write a helper function that will help you
 //              calculate the acceleration contribution of a single body.
-//		 REMEMBER : F = (G * m_a * m_b) / (r_ab ^ 2)
+//         REMEMBER : F = (G * m_a * m_b) / (r_ab ^ 2)
+
+__device__ glm::vec3 singleBodyAcceleration(glm::vec4 my_pos, glm::vec4 their_pos)
+{
+    glm::vec3 r_ab;
+    glm::vec3 acc;
+    r_ab.x = their_pos.x - my_pos.x;
+    r_ab.y = their_pos.y - my_pos.y;
+    r_ab.z = their_pos.z - my_pos.z;
+
+    float r = glm::dot(r_ab, r_ab);
+
+	if (r < 1e-4) return glm::vec3(0, 0, 0);
+	else
+	{
+		float s =  G * their_pos.w / r;
+		acc = s * glm::normalize(r_ab);
+		return acc;
+	}
+
+}
 __device__  glm::vec3 accelerate(int N, glm::vec4 my_pos, glm::vec4 * their_pos)
 {
-    return glm::vec3(0.0f);
+
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+	glm::vec4 starPos(0, 0, 0, starMass);
+	glm::vec3 acc = singleBodyAcceleration(my_pos, starPos);
+
+	if (index < N)
+    {
+        acc += singleBodyAcceleration(my_pos, their_pos[index]);
+    }
+   return acc;
 }
 
 // TODO : update the acceleration of each body
 __global__ void updateF(int N, float dt, glm::vec4 * pos, glm::vec3 * vel, glm::vec3 * acc)
 {
-	// FILL IN HERE
+    // FILL IN HERE
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+    glm::vec4 my_pos;
+    if (index < N)
+    {
+        acc[index] = accelerate(N, pos[index], pos);
+    }
+
 }
 
 // TODO : update velocity and position using a simple Euler integration scheme
 __global__ void updateS(int N, float dt, glm::vec4 * pos, glm::vec3 * vel, glm::vec3 * acc)
 {
-	// FILL IN HERE
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index < N)
+    {
+        vel[index].x += acc[index].x*dt;
+        vel[index].y += acc[index].y*dt;
+        vel[index].z += acc[index].z*dt;
+        
+        
+        pos[index].x += vel[index].x*dt;
+        pos[index].y += vel[index].y*dt;
+        pos[index].z += vel[index].z*dt;
+    }
+    
 }
 
 // Update the vertex buffer object
@@ -143,7 +192,7 @@ __global__ void sendToPBO(int N, glm::vec4 * pos, float4 * pbo, int width, int h
     {
         float mag = sqrt(sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z));
         
-		// Each thread writes one pixel location in the texture (textel)
+        // Each thread writes one pixel location in the texture (textel)
         pbo[index].w = (mag < 1.0f) ? mag : 1.0f;
     }
 }
@@ -161,25 +210,33 @@ void initCuda(int N)
     cudaMalloc((void**)&dev_pos, N*sizeof(glm::vec4));
     checkCUDAErrorWithLine("Kernel failed!");
     
-	cudaMalloc((void**)&dev_vel, N*sizeof(glm::vec3));
+    cudaMalloc((void**)&dev_vel, N*sizeof(glm::vec3));
     checkCUDAErrorWithLine("Kernel failed!");
     
-	cudaMalloc((void**)&dev_acc, N*sizeof(glm::vec3));
+    cudaMalloc((void**)&dev_acc, N*sizeof(glm::vec3));
     checkCUDAErrorWithLine("Kernel failed!");
 
     generateRandomPosArray<<<fullBlocksPerGrid, blockSize>>>(1, numObjects, dev_pos, scene_scale, planetMass);
     checkCUDAErrorWithLine("Kernel failed!");
     
-	generateCircularVelArray<<<fullBlocksPerGrid, blockSize>>>(2, numObjects, dev_vel, dev_pos);
+    generateCircularVelArray<<<fullBlocksPerGrid, blockSize>>>(2, numObjects, dev_vel, dev_pos);
     checkCUDAErrorWithLine("Kernel failed!");
     
-	cudaThreadSynchronize();
+    cudaThreadSynchronize();
 }
 
 // TODO : Using the functions you wrote above, write a function that calls the CUDA kernels to update a single sim step
 void cudaNBodyUpdateWrapper(float dt)
 {
-	// FILL IN HERE
+    // FILL IN HERE
+    dim3 fullBlocksPerGrid((int)ceil(float(numObjects)/float(blockSize)));
+
+    updateF<<<fullBlocksPerGrid, blockSize>>>(numObjects, dt, dev_pos, dev_vel, dev_acc);
+    checkCUDAErrorWithLine("Kernel failed!");
+    updateS<<<fullBlocksPerGrid, blockSize>>>(numObjects, dt, dev_pos, dev_vel, dev_acc);
+	checkCUDAErrorWithLine("Kernel failed!");
+    
+	cudaThreadSynchronize();
 }
 
 void cudaUpdateVBO(float * vbodptr, int width, int height)
@@ -195,5 +252,3 @@ void cudaUpdatePBO(float4 * pbodptr, int width, int height)
     sendToPBO<<<fullBlocksPerGrid, blockSize, blockSize*sizeof(glm::vec4)>>>(numObjects, dev_pos, pbodptr, width, height, scene_scale);
     cudaThreadSynchronize();
 }
-
-

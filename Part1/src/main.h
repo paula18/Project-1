@@ -18,6 +18,9 @@
 
 using namespace std;
 
+int iterations = 0; 
+float totalTime = 0.0f;
+
 //-------------------------------
 //------------GL STUFF-----------
 //-------------------------------
