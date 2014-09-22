@@ -3,7 +3,7 @@ Project 1
 
 #Performance Analysis
 
-The results of my analysis are shown in the table. 
+The results of my analysis are shown in the table called "performance"
 I did not see any noticeable change in the performance when changing the block size. 
 Also, unless the number of objects is really high, there is no extremely big change 
 in the performance either. The change in performance is noticeable when the GPU is 
